@@ -49,15 +49,6 @@ pub const Node = union(enum) {
                 },
             };
         }
-
-        // pub fn deinit(self: *const Unary, alloc: std.mem.Allocator) void {
-        //     defer {
-        //         alloc.destroy(self.expr);
-        //         printIndent();
-        //         std.debug.print("destroyed unary branch\n", .{});
-        //     }
-        //     self.expr.deinit(alloc);
-        // }
     };
 
     pub const Binary = struct {
@@ -95,25 +86,6 @@ pub const Node = union(enum) {
                 },
             };
         }
-
-        // pub fn deinit(self: *const Binary, alloc: std.mem.Allocator) void {
-        //     defer {
-        //         alloc.destroy(nodes[self.left]);
-        //         printIndent();
-        //         std.debug.print("destroyed left branch\n", .{});
-        //     }
-        //     defer {
-        //         alloc.destroy(nodes[self.right]);
-        //         printIndent();
-        //         std.debug.print("destroyed right branch\n", .{});
-        //     }
-        //     printIndent();
-        //     std.debug.print("left:\n", .{});
-        //     nodes[self.left].deinit(alloc);
-        //     printIndent();
-        //     std.debug.print("right:\n", .{});
-        //     nodes[self.right].deinit(alloc);
-        // }
     };
 
     pub fn eval(self: *const Node, nodes: []const Node) f64 { //EvalError!f64 {
@@ -123,23 +95,6 @@ pub const Node = union(enum) {
             inline else => |e| e.eval(nodes),
         };
     }
-
-    // pub fn deinit(self: *const Expression, alloc: std.mem.Allocator) void {
-    //     printIndent();
-    //     switch (self.*) {
-    //         .real => |x| std.debug.print("deinit-ed real ({d})\n", .{x}),
-    //         inline else => |e, tag| {
-    //             std.debug.print("deinit-ing " ++ @tagName(tag) ++ " ({s})\n", .{@tagName(e.op)});
-    //             defer {
-    //                 printIndent();
-    //                 std.debug.print("deinit-ed " ++ @tagName(tag) ++ " ({s})\n", .{@tagName(e.op)});
-    //             }
-    //             indent += 4;
-    //             defer indent -= 4;
-    //             e.deinit(alloc);
-    //         },
-    //     }
-    // }
 
     fn printIndent() void {
         for (0..indent) |_| {

@@ -6,42 +6,35 @@ const std = @import("std");
 
 /// This imports the separate module containing `root.zig`. Take a look in `build.zig` for details.
 const lib = @import("calculator_lib");
+const repl = @import("repl.zig");
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    var args = try std.process.argsWithAllocator(alloc);
+    defer args.deinit();
+    _ = args.skip();
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    const arg1 = args.next() orelse "repl";
 
-    try bw.flush(); // Don't forget to flush!
+    const stderr_file = std.io.getStdErr();
+    defer stderr_file.close();
+    const stderr = stderr_file.writer();
+
+    if (std.mem.eql(u8, arg1, "repl")) {
+        const stdout_file = std.io.getStdOut();
+        defer stdout_file.close();
+        const stdout = stdout_file.writer();
+
+        const stdin_file = std.io.getStdIn();
+        defer stdin_file.close();
+        const stdin = stdin_file.reader();
+
+        return repl.run(alloc, stdin, stdout, stderr);
+    } else {
+        try stderr.print("Unknown command: \"{s}\"\n", .{arg1});
+        return std.process.exit(1);
+    }
 }
-
-// test "simple test" {
-//     var list = std.ArrayList(i32).init(std.testing.allocator);
-//     defer list.deinit(); // Try commenting this out and see if zig detects the memory leak!
-//     try list.append(42);
-//     try std.testing.expectEqual(@as(i32, 42), list.pop());
-// }
-
-// test "use other module" {
-//     try std.testing.expectEqual(@as(i32, 150), lib.add(100, 50));
-// }
-
-// test "fuzz example" {
-//     const Context = struct {
-//         fn testOne(context: @This(), input: []const u8) anyerror!void {
-//             _ = context;
-//             // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-//             try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-//         }
-//     };
-//     try std.testing.fuzz(Context{}, Context.testOne, .{});
-// }
-

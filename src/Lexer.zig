@@ -6,7 +6,7 @@ last_token_start: ?usize,
 
 const Lexer = @This();
 
-pub fn init(input: []const u8) !Lexer {
+pub fn init(input: []const u8) error{InvalidUtf8}!Lexer {
     const view: std.unicode.Utf8View = try .init(input);
     return .{
         .it = view.iterator(),
