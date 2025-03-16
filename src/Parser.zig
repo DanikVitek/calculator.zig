@@ -3,9 +3,11 @@ const Allocator = std.mem.Allocator;
 const Tag = std.meta.Tag;
 const EnumMap = std.EnumMap;
 
-const Lexer = @import("Lexer.zig");
-const Token = @import("token.zig").Token;
-const Expression = @import("expr.zig").Expression;
+const root = @import("root.zig");
+const Lexer = root.Lexer;
+const Token = root.Token;
+const Ast = root.Ast;
+const Expression = root.Expression;
 
 input: Lexer,
 curr: ?Token = null,
@@ -34,28 +36,6 @@ pub const Diagnostics = union(enum) {
 
 const Parser = @This();
 
-const PrefixParseFn = *const fn (*Parser, Allocator, ?*Diagnostics) Error!Expression;
-const InfixParseFn = *const fn (*Parser, Allocator, Expression, ?*Diagnostics) Error!Expression;
-const PostfixParseFn = *const fn (*Parser, Allocator, Expression, ?*Diagnostics) Error!Expression;
-
-const prefix_parse_fns: EnumMap(Tag(Token), PrefixParseFn) = .init(.{
-    .number = parseReal,
-    .plus = parsePrefixExpression,
-    .minus = parsePrefixExpression,
-    .root = parsePrefixExpression,
-});
-const infix_parse_fns: EnumMap(Tag(Token), InfixParseFn) = .init(.{
-    .plus = parseInfixExpression,
-    .minus = parseInfixExpression,
-    .star = parseInfixExpression,
-    .slash = parseInfixExpression,
-    .hat = parseInfixExpression,
-    .root = parseInfixExpression,
-});
-const postfix_parse_fns: EnumMap(Tag(Token), PostfixParseFn) = .init(.{
-    // .bang = parsePostfixExpression,
-});
-
 const Precedence = enum(u3) {
     lowest,
     sum,
@@ -82,31 +62,63 @@ pub fn init(input: Lexer, diag: ?*Diagnostics) Lexer.Error!Parser {
 }
 
 pub inline fn parse(self: *Parser, alloc: Allocator, diag: ?*Diagnostics) Error!Expression {
-    return self.parseExpression(alloc, .lowest, diag);
+    var expr: Expression = .init(alloc);
+    errdefer expr.deinit();
+
+    _ = try self.parseExpression(&expr, .lowest, diag);
+
+    return expr;
 }
 
-fn parseExpression(self: *Parser, alloc: Allocator, precedence: Precedence, diag: ?*Diagnostics) Error!Expression {
-    const prefixParseFn = prefix_parse_fns.get(self.curr orelse {
+pub inline fn parseCapacity(self: *Parser, alloc: Allocator, cap: usize, diag: ?*Diagnostics) Error!Expression {
+    var expr: Expression = try .initCapacity(alloc, cap);
+    errdefer expr.deinit();
+
+    _ = try self.parseExpression(&expr, .lowest, diag);
+
+    return expr;
+}
+
+fn parseExpression(self: *Parser, expr: *Expression, precedence: Precedence, diag: ?*Diagnostics) Error!usize {
+    var left = try self.dispatchPrefixParser(expr, diag);
+
+    while (self.peek != null and @intFromEnum(precedence) < @intFromEnum(self.peekPrecedence())) {
+        left = try self.dispatchInfixParser(expr, left, diag);
+    }
+
+    return left;
+}
+
+fn dispatchPrefixParser(self: *Parser, expr: *Expression, diag: ?*Diagnostics) Error!usize {
+    const curr = self.curr orelse {
         if (diag) |d| {
             d.* = .eoi;
         }
         return Error.UnexpectedEOI;
-    }) orelse {
-        if (diag) |d| {
-            d.* = .{ .missing_parse_fn = .{
-                .token = self.curr.?,
-                .kind = .prefix,
-                .location = self.input.last_token_start.?,
-            } };
-        }
-        return Error.MissingPrefixParseFn;
     };
+    return switch (curr) {
+        .number => self.parseReal(expr, diag),
+        .plus, .minus, .root => self.parsePrefixExpression(expr, diag),
+        else => b: {
+            if (diag) |d| {
+                d.* = .{ .missing_parse_fn = .{
+                    .token = curr,
+                    .kind = .prefix,
+                    .location = self.input.last_token_start.?,
+                } };
+            }
+            break :b Error.MissingPrefixParseFn;
+        },
+    };
+}
 
-    var left = try prefixParseFn(self, alloc, diag);
-    errdefer left.deinit(alloc);
-
-    while (self.peek != null and @intFromEnum(precedence) < @intFromEnum(self.peekPrecedence())) {
-        const infixParseFn = infix_parse_fns.get(self.peek.?) orelse {
+fn dispatchInfixParser(self: *Parser, expr: *Expression, left: usize, diag: ?*Diagnostics) Error!usize {
+    return switch (self.peek.?) {
+        .plus, .minus, .star, .slash, .hat, .root => b: {
+            try self.advance(diag);
+            break :b self.parseInfixExpression(expr, left, diag);
+        },
+        else => b: {
             if (diag) |d| {
                 d.* = .{ .missing_parse_fn = .{
                     .token = self.peek.?,
@@ -114,18 +126,12 @@ fn parseExpression(self: *Parser, alloc: Allocator, precedence: Precedence, diag
                     .location = self.input.last_token_start.?,
                 } };
             }
-            return Error.MissingInfixParseFn;
-        };
-
-        try self.advance(diag);
-
-        left = try infixParseFn(self, alloc, left, diag);
-    }
-
-    return left;
+            break :b Error.MissingInfixParseFn;
+        },
+    };
 }
 
-fn parseReal(self: *Parser, diag: ?*Diagnostics) Error!Expression {
+fn parseReal(self: *Parser, expr: *Expression, diag: ?*Diagnostics) Error!usize {
     const value_str = self.curr.?.number;
     const value = std.fmt.parseFloat(f64, value_str) catch |err| {
         if (diag) |d| {
@@ -133,14 +139,20 @@ fn parseReal(self: *Parser, diag: ?*Diagnostics) Error!Expression {
         }
         return err;
     };
-    return .{ .real = value };
+    expr.nodes.append(.{ .real = value }) catch |err| {
+        if (diag) |d| {
+            d.* = .oom;
+        }
+        return err;
+    };
+    return expr.nodes.items.len - 1;
 }
 
-fn parsePrefixExpression(self: *Parser, alloc: Allocator, diag: ?*Diagnostics) Error!Expression {
-    const op: Expression.Unary.Operator = switch (self.curr.?) {
+fn parsePrefixExpression(self: *Parser, expr: *Expression, diag: ?*Diagnostics) Error!usize {
+    const op: Expression.Node.Unary.Operator = switch (self.curr.?) {
         .plus => {
             try self.advance(diag);
-            return self.parseExpression(alloc, .prefix, diag);
+            return self.parseExpression(expr, .prefix, diag);
         },
         .minus => .minus,
         .root => .sqrt,
@@ -148,21 +160,24 @@ fn parsePrefixExpression(self: *Parser, alloc: Allocator, diag: ?*Diagnostics) E
     };
     try self.advance(diag);
 
-    const right = alloc.create(Expression) catch |err| {
+    const right = try self.parseExpression(expr, .prefix, diag);
+    expr.nodes.append(.{ .unary = .{ .op = op, .expr = right } }) catch |err| {
         if (diag) |d| {
             d.* = .oom;
         }
         return err;
     };
-    errdefer alloc.destroy(right);
 
-    right.* = try self.parseExpression(alloc, .prefix, diag);
-
-    return .{ .unary = .{ .op = op, .expr = right } };
+    return expr.nodes.items.len - 1;
 }
 
-fn parseInfixExpression(self: *Parser, alloc: Allocator, left: Expression, diag: ?*Diagnostics) Error!Expression {
-    const op: Expression.Binary.Operator = switch (self.curr.?) {
+fn parseInfixExpression(
+    self: *Parser,
+    expr: *Expression,
+    left: usize,
+    diag: ?*Diagnostics,
+) Error!usize {
+    const op: Expression.Node.Binary.Operator = switch (self.curr.?) {
         .plus => .add,
         .minus => .subtract,
         .star => .multiply,
@@ -172,35 +187,22 @@ fn parseInfixExpression(self: *Parser, alloc: Allocator, left: Expression, diag:
         else => unreachable,
     };
 
-    const left_ptr = alloc.create(Expression) catch |err| {
-        if (diag) |d| {
-            d.* = .oom;
-        }
-        return err;
-    };
-    errdefer alloc.destroy(left_ptr);
-
-    left_ptr.* = left;
-    errdefer left.deinit(alloc);
-
     const precedence = self.currPrecedence();
     try self.advance(diag);
 
-    const right_ptr = alloc.create(Expression) catch |err| {
+    const right = try self.parseExpression(expr, precedence, diag);
+    expr.nodes.append(.{ .binary = .{
+        .op = op,
+        .left = left,
+        .right = right,
+    } }) catch |err| {
         if (diag) |d| {
             d.* = .oom;
         }
         return err;
     };
-    errdefer alloc.destroy(right_ptr);
 
-    right_ptr.* = try self.parseExpression(alloc, precedence, diag);
-
-    return .{ .binary = .{
-        .op = op,
-        .left = left_ptr,
-        .right = right_ptr,
-    } };
+    return expr.nodes.items.len - 1;
 }
 
 fn advance(self: *Parser, diag: ?*Diagnostics) Lexer.Error!void {
@@ -242,9 +244,6 @@ const testing = std.testing;
 test "parse float" {
     std.debug.print("\n", .{});
 
-    const gpa = testing.allocator;
-    var arena = std.heap.ArenaAllocator.init(gpa);
-
     const cases = [_]struct {
         name: []const u8,
         input: []const u8,
@@ -263,8 +262,6 @@ test "parse float" {
     };
 
     inline for (cases) |case| {
-        defer arena.deinit();
-
         const input = try Lexer.init(case.input);
         var diag: Diagnostics = undefined;
         var parser = Parser.init(input, &diag) catch |err| {
@@ -274,17 +271,19 @@ test "parse float" {
             );
             return err;
         };
-        const result = parser.parse(arena.allocator(), &diag) catch |err| {
+        const result = parser.parse(testing.allocator, &diag) catch |err| {
             std.debug.print(
                 "{s}\n{!}: {any}\n",
                 .{ case.name, err, diag },
             );
             return err;
         };
-        testing.expectApproxEqAbs(case.expected, result.real, 0.000001) catch |err| {
+        defer result.deinit();
+        const result_value = result.nodes.items[0].real;
+        testing.expectApproxEqAbs(case.expected, result_value, 0.000001) catch |err| {
             std.debug.print(
                 "{s}\nexpected: {1d} ({1e})\nactual: {2d} ({2e})\n",
-                .{ case.name, case.expected, result.real },
+                .{ case.name, case.expected, result_value },
             );
             return err;
         };
@@ -304,40 +303,50 @@ test "parse expression" {
         return err;
     };
 
-    const gpa = testing.allocator;
-    var arena = std.heap.ArenaAllocator.init(gpa);
-    const alloc = arena.allocator();
+    const alloc = testing.allocator;
 
     const result = parser.parse(alloc, &diag) catch |err| {
         std.debug.print("{!}: {any}\n", .{ err, diag });
         return err;
     };
-    defer result.deinit(alloc);
+    defer result.deinit();
 
-    const expected: Expression = .{ .binary = .{
-        .op = .subtract,
-        .left = &.{ .binary = .{
+    const expected: [11]Expression.Node = .{
+        .{ .real = 3.0 }, // 0
+        .{ .real = 4.0 }, // 1
+        .{ .real = 2.0 }, // 2
+        .{ .binary = .{
+            .op = .multiply,
+            .left = 1,
+            .right = 2,
+        } }, // 3
+        .{ .binary = .{
             .op = .add,
-            .left = &.{ .real = 3.0 },
-            .right = &.{ .binary = .{
-                .op = .multiply,
-                .left = &.{ .real = 4.0 },
-                .right = &.{ .real = 2.0 },
-            } },
-        } },
-        .right = &.{ .binary = .{
+            .left = 0,
+            .right = 3,
+        } }, // 4
+        .{ .real = 1.0 }, // 5
+        .{ .real = 5.0 }, // 6
+        .{ .real = 2.0 }, // 7
+        .{ .binary = .{
+            .op = .power,
+            .left = 6,
+            .right = 7,
+        } }, // 8
+        .{ .binary = .{
             .op = .divide,
-            .left = &.{ .real = 1.0 },
-            .right = &.{ .binary = .{
-                .op = .power,
-                .left = &.{ .real = 5.0 },
-                .right = &.{ .real = 2.0 },
-            } },
-        } },
-    } };
+            .left = 5,
+            .right = 8,
+        } }, // 9
+        .{ .binary = .{
+            .op = .subtract,
+            .left = 4,
+            .right = 9,
+        } }, // 10
+    };
 
-    testing.expectEqualDeep(expected, result) catch |err| {
-        std.debug.print("expected: {any}\nactual: {any}\n", .{ expected, result });
+    testing.expectEqualDeep(expected[0..], result.nodes.items) catch |err| {
+        std.debug.print("expected: {any}\nactual: {any}\n", .{ expected, result.nodes.items });
         return err;
     };
 }
