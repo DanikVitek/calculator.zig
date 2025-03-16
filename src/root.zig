@@ -4,8 +4,7 @@
 
 pub const Parser = @import("Parser.zig");
 pub const Lexer = @import("Lexer.zig");
-const ast = @import("ast.zig");
-pub const Expression = ast.Expression;
+pub const Expression = @import("expr.zig").Expression;
 
 test {
     @import("std").testing.refAllDecls(@This());

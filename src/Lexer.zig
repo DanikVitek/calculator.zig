@@ -2,6 +2,7 @@ const std = @import("std");
 const Token = @import("token.zig").Token;
 
 it: std.unicode.Utf8Iterator,
+last_token_start: ?usize,
 
 const Lexer = @This();
 
@@ -9,6 +10,7 @@ pub fn init(input: []const u8) !Lexer {
     const view: std.unicode.Utf8View = try .init(input);
     return .{
         .it = view.iterator(),
+        .last_token_start = null,
     };
 }
 
@@ -17,12 +19,19 @@ pub const Error = error{
     ExpectedDigit,
 } || SkipExponentError;
 
-pub const Diagnostics = union {
+pub const Diagnostics = struct {
     location: usize,
 };
 
 pub fn next(self: *Lexer, diag: ?*Diagnostics) Error!?Token {
     var start = self.it.i;
+
+    var ok = true;
+    defer if (ok) {
+        self.last_token_start = start;
+    };
+    errdefer ok = false;
+
     errdefer self.it.i = start;
     errdefer if (diag) |d| {
         d.location = start;
