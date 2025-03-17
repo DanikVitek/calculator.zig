@@ -8,10 +8,21 @@ const std = @import("std");
 const lib = @import("calculator_lib");
 const repl = @import("repl.zig");
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
+pub fn main() void {
+    // var alloc_impl = if (@import("builtin").mode == .Debug) b: {
+    //     const SmpAllocatorProvider = struct {
+    //         pub inline fn allocator(_: @This()) std.mem.Allocator {
+    //             return std.heap.smp_allocator;
+    //         }
+    //     };
+    //     break :b std.mem.validationWrap(SmpAllocatorProvider{});
+    // } else @compileError("impl is global");
+
+    const alloc = if (@import("builtin").mode == .Debug)
+        // alloc_impl.allocator()
+        std.heap.c_allocator
+    else
+        std.heap.smp_allocator;
 
     var args = try std.process.argsWithAllocator(alloc);
     defer args.deinit();
@@ -19,22 +30,10 @@ pub fn main() !void {
 
     const arg1 = args.next() orelse "repl";
 
-    const stderr_file = std.io.getStdErr();
-    defer stderr_file.close();
-    const stderr = stderr_file.writer();
-
     if (std.mem.eql(u8, arg1, "repl")) {
-        const stdout_file = std.io.getStdOut();
-        defer stdout_file.close();
-        const stdout = stdout_file.writer();
-
-        const stdin_file = std.io.getStdIn();
-        defer stdin_file.close();
-        const stdin = stdin_file.reader();
-
-        return repl.run(alloc, stdin, stdout, stderr);
+        return repl.run(alloc) catch |err| std.debug.panic("{!}", .{err});
     } else {
-        try stderr.print("Unknown command: \"{s}\"\n", .{arg1});
+        std.debug.print("Unknown command: \"{s}\"\n", .{arg1});
         return std.process.exit(1);
     }
 }

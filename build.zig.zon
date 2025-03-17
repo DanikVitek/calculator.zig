@@ -65,16 +65,16 @@
         //    // actually used.
         //    .lazy = false,
         //},
-    },
 
-    // Specifies the set of files and directories that are included in this package.
-    // Only files and directories listed here are included in the `hash` that
-    // is computed for this package. Only files listed here will remain on disk
-    // when using the zig package manager. As a rule of thumb, one should list
-    // files required for compilation plus any license(s).
-    // Paths are relative to the build root. Use the empty string (`""`) to refer to
-    // the build root itself.
-    // A directory listed here means that all files within, recursively, are included.
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis.git#4182b7fa42f27cf14a71dbdb54cfd82c5c6e3447",
+            .hash = "vaxis-0.1.0-BWNV_MHyCAA0rNbPTr50Z44PyEdNP9zQSnHcXBXoo3Ti",
+        },
+        // .zg = .{
+        //     .url = "git+https://codeberg.org/atman/zg#4a002763419a34d61dcbb1f415821b83b9bf8ddc",
+        //     .hash = "zg-0.13.4-AAAAAGiZ7QLz4pvECFa_wG4O4TP4FLABHHbemH2KakWM",
+        // },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

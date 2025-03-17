@@ -28,6 +28,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // const zg = b.dependency("zg", .{});
+    // lib_mod.addImport("grapheme", zg.module("grapheme"));
+
     // We will also create a module for our other entry point, 'main.zig'.
     const exe_mod = b.createModule(.{
         // `root_source_file` is the Zig "entry point" of the module. If a module
@@ -43,6 +46,9 @@ pub fn build(b: *std.Build) void {
     // This is what allows Zig source code to use `@import("foo")` where 'foo' is not a
     // file path. In this case, we set up `exe_mod` to import `lib_mod`.
     exe_mod.addImport("calculator_lib", lib_mod);
+
+    const vaxis = b.dependency("vaxis", .{});
+    exe_mod.addImport("vaxis", vaxis.module("vaxis"));
 
     // Now, we will create a static library based on the module we created above.
     // This creates a `std.Build.Step.Compile`, which is the build step responsible
@@ -64,6 +70,10 @@ pub fn build(b: *std.Build) void {
         .name = "calculator",
         .root_module = exe_mod,
     });
+
+    if (optimize == .Debug) {
+        exe.linkLibC();
+    }
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
