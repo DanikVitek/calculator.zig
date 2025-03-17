@@ -15,6 +15,12 @@ alloc: Allocator,
 
 const Model = @This();
 
+const allowed_input_keys: *const [24]u21 = &.{
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    '+', '-', '*', '/', '^', '!', '|', '(', ')', '√',
+    ' ', 'e', 'E', '.',
+};
+
 pub fn init(alloc: Allocator, unicode: *const Unicode) !*Model {
     const model = try alloc.create(Model);
     errdefer alloc.destroy(model);
@@ -31,6 +37,7 @@ pub fn init(alloc: Allocator, unicode: *const Unicode) !*Model {
                     },
                 },
                 .item_count = 0,
+                .wheel_scroll = 2,
             },
             .estimated_content_height = 0,
         },
@@ -147,17 +154,23 @@ pub fn handleEvent(self: *Model, ctx: *vxfw.EventContext, event: vxfw.Event) any
                 }
                 ctx.redraw = true;
             } else if (key.matches(vaxis.Key.enter, .{}) or key.matches('j', .{ .ctrl = true })) {
-                if (self.history.getSelectedItem()) |selected_entry| {
+                const new_entry = if (self.history.getSelectedItem()) |selected_entry| b: {
                     defer self.history.deselect();
                     defer self.text_input.clearRetainingCapacity();
                     const new_entry = try selected_entry.clone(self.alloc);
                     self.addHistoryEntry(new_entry);
-                } else {
+                    break :b new_entry;
+                } else b: {
                     const new_entry = try History.Entry.init(try self.text_input.toOwnedSlice(), self.alloc);
                     self.addHistoryEntry(new_entry);
-                }
+                    break :b new_entry;
+                };
+                _ = self.scroll_bars.scroll_view.scroll.linesDown(@truncate(new_entry.height()));
                 ctx.redraw = true;
-            } else {
+            } else if (key.matchesAny(allowed_input_keys, .{}) or
+                key.codepoint == vaxis.Key.backspace or key.codepoint == vaxis.Key.delete or
+                key.codepoint == vaxis.Key.left or key.codepoint == vaxis.Key.right)
+            {
                 self.history.deselect();
                 try self.text_input.handleEvent(ctx, event);
             }
