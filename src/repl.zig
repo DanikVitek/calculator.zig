@@ -6,7 +6,7 @@ const ArrayList = std.ArrayList;
 const vaxis = @import("vaxis");
 const vxfw = vaxis.vxfw;
 
-const Model = @import("repl/Model.zig");
+const Model = @import("repl/widget.zig").Model;
 
 pub fn run(alloc: Allocator) !void {
     var app = try vxfw.App.init(alloc);

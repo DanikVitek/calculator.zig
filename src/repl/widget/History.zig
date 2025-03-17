@@ -3,12 +3,13 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
 const calculator = @import("calculator_lib");
-const ArrayDeque = @import("deque.zig").ArrayDeque;
+const ArrayDeque = @import("../deque.zig").ArrayDeque;
+const LineIterator = @import("../LineIterator.zig");
 
 const vaxis = @import("vaxis");
 const vxfw = vaxis.vxfw;
 
-const arrows_widget = @import("common.zig").arrows_widget;
+const arrows_widget = @import("simple.zig").arrows_widget;
 
 deque: ArrayDeque(Entry),
 selected_item: ?usize,
@@ -92,8 +93,38 @@ pub const Entry = struct {
         };
     }
 
-    pub fn height(self: Entry) usize {
-        return std.mem.count(u8, self.input, "\n") + 1 + std.mem.count(u8, self.result, "\n") + 1;
+    pub fn height(self: *const Entry) usize {
+        return self.inputHeight() + self.resultHeight();
+    }
+
+    pub fn width(self: *const Entry, ctx: vxfw.DrawContext) usize {
+        return @max(self.inputWidth(ctx), self.resultWidth(ctx));
+    }
+
+    fn inputHeight(self: *const Entry) usize {
+        return std.mem.count(u8, self.input, "\n") + 1;
+    }
+
+    fn resultHeight(self: *const Entry) usize {
+        return std.mem.count(u8, self.result, "\n") + 1;
+    }
+
+    fn inputWidth(self: *const Entry, ctx: vxfw.DrawContext) usize {
+        var line_iter: LineIterator = .init(self.input);
+        var max_width: usize = 0;
+        while (line_iter.next()) |line| {
+            max_width = @max(max_width, ctx.stringWidth(line));
+        }
+        return max_width;
+    }
+
+    fn resultWidth(self: *const Entry, ctx: vxfw.DrawContext) usize {
+        var line_iter: LineIterator = .init(self.result);
+        var max_width: usize = 0;
+        while (line_iter.next()) |line| {
+            max_width = @max(max_width, ctx.stringWidth(line));
+        }
+        return max_width;
     }
 
     fn printParserError(
@@ -169,27 +200,75 @@ pub const Entry = struct {
     }
 
     fn draw(self: *const Entry, ctx: vxfw.DrawContext) Allocator.Error!vxfw.Surface {
+        const arrows_widget_width = @as(u16, @intCast(arrows_widget.text.len));
+
         const arrows_surf: vxfw.SubSurface = .{
             .origin = .{ .row = 0, .col = 0 },
             .surface = try arrows_widget.draw(ctx.withConstraints(
-                .{ .width = 3, .height = 1 },
-                .{ .width = 3, .height = 1 },
+                .{
+                    .width = @min(ctx.min.width, arrows_widget_width),
+                    .height = 1,
+                },
+                .{
+                    .width = if (ctx.max.width) |w|
+                        @min(w, arrows_widget_width)
+                    else
+                        @intCast(arrows_widget.text.len),
+                    .height = 1,
+                },
             )),
         };
 
         const input_widget: vxfw.Text = .{ .text = self.input, .softwrap = false };
+
+        const input_width: u16 = @intCast(self.inputWidth(ctx));
+        const input_height: u16 = @intCast(self.inputHeight());
+
         const input_surf: vxfw.SubSurface = .{
-            .origin = .{ .row = 0, .col = 3 },
+            .origin = .{ .row = 0, .col = arrows_widget_width },
             .surface = try input_widget.draw(ctx.withConstraints(
-                .{ .height = 1, .width = 1 },
-                .{ .height = 1, .width = @truncate(ctx.stringWidth(self.input)) },
+                .{
+                    .height = @min(ctx.min.height, input_height),
+                    .width = @min(ctx.min.width -| arrows_widget_width, input_width),
+                },
+                .{
+                    .height = if (ctx.max.height) |h|
+                        @min(h, input_height)
+                    else
+                        input_height,
+
+                    .width = if (ctx.max.width) |w|
+                        @min(w -| arrows_widget_width, input_width)
+                    else
+                        input_width,
+                },
             )),
         };
 
         const result_widget: vxfw.Text = .{ .text = self.result, .softwrap = false };
+
+        const result_width: u16 = @intCast(self.resultWidth(ctx));
+        const result_height: u16 = @intCast(self.resultHeight());
+
         const result_surf: vxfw.SubSurface = .{
             .origin = .{ .row = 1, .col = 0 },
-            .surface = try result_widget.draw(ctx),
+            .surface = try result_widget.draw(ctx.withConstraints(
+                .{
+                    .height = @min(ctx.min.height, result_height),
+                    .width = @min(ctx.min.width, result_width),
+                },
+                .{
+                    .height = if (ctx.max.height) |h|
+                        @min(h, result_height)
+                    else
+                        result_height,
+
+                    .width = if (ctx.max.width) |w|
+                        @min(w, result_width)
+                    else
+                        result_width,
+                },
+            )),
         };
 
         const children = try ctx.arena.alloc(vxfw.SubSurface, 3);
@@ -222,6 +301,30 @@ pub fn deinit(self: *History, alloc: Allocator) void {
     while (iter.next()) |entry| {
         entry.deinit(alloc);
     }
+}
+
+pub fn height(self: *const History) usize {
+    var iter = self.deque.iter();
+    var total_height: usize = 0;
+    while (iter.next()) |entry| {
+        total_height += entry.height();
+    }
+    return total_height;
+}
+
+pub fn width(self: *const History, ctx: vxfw.DrawContext) usize {
+    var iter = self.deque.iter();
+    var max_width: usize = 0;
+    while (iter.next()) |entry| {
+        max_width = @max(max_width, entry.width(ctx));
+    }
+    return max_width;
+}
+
+pub fn widgetBuilder(userdata: *const anyopaque, idx: usize, _: usize) ?vxfw.Widget {
+    const self: *const History = @ptrCast(@alignCast(userdata));
+    var entry = self.deque.getOrNull(idx) orelse return null;
+    return entry.widget();
 }
 
 pub fn add(self: *History, item: Entry) ?Entry {

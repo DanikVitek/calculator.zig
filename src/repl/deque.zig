@@ -187,11 +187,11 @@ pub fn ArrayDeque(comptime T: type) type {
         }
 
         pub fn iter(self: *const Self) Iter {
-            return Iter{ .deque = self, .index = self.start };
+            return Iter{ .deque = self, .index = self.head };
         }
 
         pub fn iterMut(self: *Self) IterMut {
-            return IterMut{ .deque = self, .index = self.start };
+            return IterMut{ .deque = self, .index = self.head };
         }
 
         pub const Iterator = struct {
@@ -222,7 +222,7 @@ pub fn ArrayDeque(comptime T: type) type {
             index: usize,
 
             pub fn next(self: *IterMut) ?*T {
-                if (self.index == self.deque.end) return null;
+                if (self.index == self.deque.len) return null;
                 defer self.index = (self.index + 1) % self.deque.slice.len;
                 return &self.deque.slice[self.index];
             }
