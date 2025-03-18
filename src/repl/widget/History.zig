@@ -133,19 +133,15 @@ pub const Entry = struct {
         err: calculator.Parser.Error,
         diag: calculator.Parser.Diagnostics,
     ) !void {
-        try writer.print("Parser error:\n", .{});
+        try writer.writeAll("Parser error:\n");
         switch (err) {
             error.OutOfMemory => return @as(Allocator.Error, @errorCast(err)),
-            error.InvalidCharacter => switch (diag) {
-                .lexer => |lexer_diag| try printLexerError(
-                    line,
-                    writer,
-                    error.InvalidCharacter,
-                    lexer_diag,
-                ),
-                .float => |float| try writer.print("\t{s}\nDescription: Invalid floating point number", .{float}),
-                else => unreachable,
-            },
+            error.InvalidCharacter => try printLexerError(
+                line,
+                writer,
+                error.InvalidCharacter,
+                diag.lexer,
+            ),
             error.ExpectedDigit, error.ExpectedSignOrDigit => |e| try printLexerError(
                 line,
                 writer,
@@ -154,17 +150,22 @@ pub const Entry = struct {
             ),
             error.UnexpectedEOI => {
                 try writer.print("\t{s}\n\t", .{line});
-                for (0..line.len) |_| {
-                    try writer.print("~", .{});
-                }
-                try writer.print("^\nDescription: Unexpected end of input", .{});
+                try writer.writeByteNTimes('~', diag.eoi.location);
+                try writer.writeAll("^\nDescription: Unexpected end of input");
+            },
+            error.UnexpectedToken => {
+                try writer.print("\t{s}\n\t", .{line});
+
+                try writer.writeByteNTimes('~', diag.unexpected.start_codepoint_pos);
+                try writer.writeByteNTimes('^', diag.unexpected.token.width());
+                try writer.writeByteNTimes('~', line.len - (diag.unexpected.start_codepoint_pos + diag.unexpected.token.width()));
+
+                try writer.print("\nDescription: Unexpected `{s}` token", .{diag.unexpected.token});
             },
             error.ExpectedGroupClosingToken => {
                 try writer.print("\t{s}\n\t", .{line});
-                for (0..line.len) |_| {
-                    try writer.print("~", .{});
-                }
-                try writer.print("^\nDescription: Expected `{s}` token", .{switch (diag.expected_group_closing_token) {
+                try writer.writeByteNTimes('~', diag.expected_group_closing_token.start_codepoint_pos);
+                try writer.print("^\nDescription: Expected `{s}` token", .{switch (diag.expected_group_closing_token.token) {
                     .r_paren => ")",
                     .bar => "|",
                     else => unreachable,
@@ -180,21 +181,19 @@ pub const Entry = struct {
         err: calculator.Lexer.Error,
         diag: calculator.Lexer.Diagnostics,
     ) !void {
-        try writer.print("Lexer error:\n", .{});
-        const location = diag.location;
+        try writer.writeAll("Lexer error:\n");
         try writer.print("\t{s}\n\t", .{line});
-        for (0..location) |_| {
-            try writer.print("~", .{});
-        }
-        try writer.print("^", .{});
-        for (location + 1..line.len) |_| {
-            try writer.print("~", .{});
-        }
-        try writer.print("\nDescription: ", .{});
+
+        const location = diag.location;
+        try writer.writeByteNTimes('~', location);
+        try writer.writeByte('^');
+        try writer.writeByteNTimes('~', line.len - location - 1);
+
+        try writer.writeAll("\nDescription: ");
         switch (err) {
-            error.InvalidCharacter => try writer.print("Invalid character", .{}),
-            error.ExpectedDigit => try writer.print("Expected digit", .{}),
-            error.ExpectedSignOrDigit => try writer.print("Expected +, - or digit", .{}),
+            error.InvalidCharacter => try writer.writeAll("Invalid character"),
+            error.ExpectedDigit => try writer.writeAll("Expected digit"),
+            error.ExpectedSignOrDigit => try writer.writeAll("Expected +, - or digit"),
         }
     }
 

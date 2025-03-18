@@ -1,8 +1,9 @@
 const std = @import("std");
 const Token = @import("token.zig").Token;
+const SpannedToken = @import("token.zig").SpannedToken;
 
 it: std.unicode.Utf8Iterator,
-last_token_start: ?usize,
+codepoint: usize,
 
 const Lexer = @This();
 
@@ -10,7 +11,7 @@ pub fn init(input: []const u8) error{InvalidUtf8}!Lexer {
     const view: std.unicode.Utf8View = try .init(input);
     return .{
         .it = view.iterator(),
-        .last_token_start = null,
+        .codepoint = 0,
     };
 }
 
@@ -23,26 +24,26 @@ pub const Diagnostics = struct {
     location: usize,
 };
 
-pub fn next(self: *Lexer, diag: ?*Diagnostics) Error!?Token {
-    var start = self.it.i;
+pub fn next(self: *Lexer, diag: ?*Diagnostics, comptime spanned: bool) Error!?if (spanned) SpannedToken else Token {
+    self.skipWhitespace();
 
-    var ok = true;
-    defer if (ok) {
-        self.last_token_start = start;
-    };
-    errdefer ok = false;
+    const start_byte = self.it.i;
+    const start_codepoint = self.codepoint;
 
-    errdefer self.it.i = start;
+    errdefer self.it.i = start_byte;
+    errdefer self.codepoint = start_codepoint;
     errdefer if (diag) |d| {
-        d.location = start;
+        d.location = start_codepoint;
     };
 
-    return cases: switch (self.nextCodepoint() orelse return null) {
-        ' ', '\t', '\n', '\r' => {
-            self.skipWhitespace();
-            start = self.it.i;
-            continue :cases self.nextCodepoint() orelse return null;
-        },
+    return if (spanned) .{
+        .token = (try self.nextImpl(start_byte)) orelse return null,
+        .start_codepoint_pos = start_codepoint,
+    } else self.nextImpl(start_byte);
+}
+
+fn nextImpl(self: *Lexer, start_byte: usize) Error!?Token {
+    return switch (self.nextCodepoint() orelse return null) {
         '(' => .l_paren,
         ')' => .r_paren,
         '+' => .plus,
@@ -51,14 +52,14 @@ pub fn next(self: *Lexer, diag: ?*Diagnostics) Error!?Token {
         '/' => b: {
             if (self.peekCodepoint()) |peek| if (peek == '/') {
                 _ = self.nextCodepoint().?;
-                break :b .root;
+                break :b .{ .root = .{ .unicode = false } };
             };
             break :b .slash;
         },
         '^' => .hat,
         '|' => .bar,
         '!' => .bang,
-        '√' => .root,
+        '√' => .{ .root = .{ .unicode = true } },
         '0'...'9' => b: {
             self.skipDigits();
 
@@ -69,7 +70,7 @@ pub fn next(self: *Lexer, diag: ?*Diagnostics) Error!?Token {
 
             try self.skipExponent();
 
-            break :b .{ .number = self.it.bytes[start..self.it.i] };
+            break :b .{ .number = self.it.bytes[start_byte..self.it.i] };
         },
         '.' => b: {
             switch (self.peekCodepoint() orelse break :b Error.ExpectedDigit) {
@@ -82,7 +83,7 @@ pub fn next(self: *Lexer, diag: ?*Diagnostics) Error!?Token {
 
             try self.skipExponent();
 
-            break :b .{ .number = self.it.bytes[start..self.it.i] };
+            break :b .{ .number = self.it.bytes[start_byte..self.it.i] };
         },
         else => Error.InvalidCharacter,
     };
@@ -127,7 +128,10 @@ fn skipExponent(self: *Lexer) SkipExponentError!void {
 }
 
 fn nextCodepoint(self: *Lexer) ?u21 {
-    return self.it.nextCodepoint();
+    return if (self.it.nextCodepoint()) |c| b: {
+        self.codepoint += 1;
+        break :b c;
+    } else null;
 }
 
 fn peekCodepoint(self: *Lexer) ?u21 {
@@ -169,7 +173,7 @@ test "different tokens" {
     };
     for (expected_tokens) |expected_token| {
         var diag: Diagnostics = undefined;
-        const token = lexer.next(&diag) catch |err| {
+        const token = lexer.next(&diag, false) catch |err| {
             std.debug.print("{!}: \"{s}\"\n", .{ err, input[diag.location..] });
             return err;
         };
@@ -208,7 +212,7 @@ test "number" {
             .number = input,
         };
         var diag: Diagnostics = undefined;
-        const token = lexer.next(&diag) catch |err| {
+        const token = lexer.next(&diag, false) catch |err| {
             std.debug.print(
                 "test \"{s}\":\n{!}: \"{s}\"\n",
                 .{ case.name, err, input[diag.location..] },
@@ -244,7 +248,7 @@ test "fail number" {
         const input = case.input;
         var lexer = try Lexer.init(input);
         var diag: Diagnostics = undefined;
-        const token = lexer.next(&diag);
+        const token = lexer.next(&diag, false);
         testing.expectError(case.expected_error, token) catch |err| {
             std.debug.print(
                 "test \"{s}\":\nexpected: {!}\nactual: {!?}\n",
