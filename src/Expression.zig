@@ -14,9 +14,11 @@ pub fn initCapacity(alloc: Allocator, num: usize) Allocator.Error!Expression {
     return Expression{ .nodes = try .initCapacity(alloc, num) };
 }
 
+pub const Float = f64;
+
 pub const Node = union(enum) {
-    real: f64,
-    // complex: std.math.Complex(f64),
+    real: Float,
+    // complex: std.math.Complex(Float),
     unary: Unary,
     binary: Binary,
 
@@ -37,7 +39,7 @@ pub const Node = union(enum) {
             abs,
         };
 
-        pub fn eval(self: *const Unary, nodes: []const Node) f64 { //EvalError!f64 {
+        pub fn eval(self: *const Unary, nodes: []const Node) Float { //EvalError!Float {
             @setFloatMode(.strict);
             return switch (self.op) {
                 .minus => -nodes[self.expr].eval(nodes),
@@ -71,14 +73,14 @@ pub const Node = union(enum) {
             root,
         };
 
-        pub fn eval(self: *const Binary, nodes: []const Node) f64 { //EvalError!f64 {
+        pub fn eval(self: *const Binary, nodes: []const Node) Float { //EvalError!Float {
             @setFloatMode(.strict);
             return switch (self.op) {
                 .add => nodes[self.left].eval(nodes) + nodes[self.right].eval(nodes),
                 .subtract => nodes[self.left].eval(nodes) - nodes[self.right].eval(nodes),
                 .multiply => nodes[self.left].eval(nodes) * nodes[self.right].eval(nodes),
                 .divide => divide(nodes[self.left].eval(nodes), nodes[self.right].eval(nodes)),
-                .power => std.math.pow(f64, nodes[self.left].eval(nodes), nodes[self.right].eval(nodes)),
+                .power => std.math.pow(Float, nodes[self.left].eval(nodes), nodes[self.right].eval(nodes)),
                 .root => b: {
                     const n = nodes[self.left].eval(nodes);
                     const x = nodes[self.right].eval(nodes);
@@ -88,7 +90,7 @@ pub const Node = union(enum) {
         }
     };
 
-    pub fn eval(self: *const Node, nodes: []const Node) f64 { //EvalError!f64 {
+    pub fn eval(self: *const Node, nodes: []const Node) Float { //EvalError!Float {
         @setFloatMode(.strict);
         return switch (self.*) {
             .real => |n| n,
@@ -103,7 +105,7 @@ pub const Node = union(enum) {
     }
 };
 
-pub fn eval(self: *const Expression) f64 {
+pub fn eval(self: *const Expression) Float {
     return self.nodes.getLast().eval(self.nodes.items);
 }
 
@@ -113,7 +115,7 @@ pub fn deinit(self: Expression) void {
 
 // pub const DivisionError = error{DivisionByZero};
 
-fn divide(x: f64, y: f64) f64 { //DivisionError!f64 {
+fn divide(x: Float, y: Float) Float { //DivisionError!Float {
     // if (y == 0) {
     //     return DivisionError.DivisionByZero;
     // }
@@ -122,17 +124,17 @@ fn divide(x: f64, y: f64) f64 { //DivisionError!f64 {
 
 // pub const RootError = error{NegativeArgument};
 
-fn root(x: f64, n: f64) f64 { //RootError!f64 {
+fn root(x: Float, n: Float) Float { //RootError!Float {
     // if (x < 0) {
     //     return RootError.NegativeArgument;
     // }
     if (n == 2) {
         return sqrt(x);
     }
-    return std.math.pow(f64, x, 1 / n);
+    return std.math.pow(Float, x, 1 / n);
 }
 
-fn sqrt(x: f64) f64 { //RootError!f64 {
+fn sqrt(x: Float) Float { //RootError!Float {
     // if (x < 0) {
     //     return error.NegativeArgument;
     // }
@@ -144,8 +146,8 @@ fn sqrt(x: f64) f64 { //RootError!f64 {
 //     NonIntegerFactorial,
 // };
 
-fn factorial(x: f64) f64 { //FactorialError!f64 {
-    return std.math.gamma(f64, x + 1);
+fn factorial(x: Float) Float { //FactorialError!Float {
+    return std.math.gamma(Float, x + 1);
 }
 
 test "3 + 4 * 2 - 1 / 5 ^ 2" {
@@ -190,7 +192,7 @@ test "3 + 4 * 2 - 1 / 5 ^ 2" {
     };
     const result = expr.eval();
     try std.testing.expectApproxEqAbs(
-        3.0 + 4.0 * 2.0 - 1.0 / std.math.pow(f64, 5, 2),
+        3.0 + 4.0 * 2.0 - 1.0 / std.math.pow(Float, 5, 2),
         result,
         0.0001,
     );

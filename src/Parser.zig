@@ -145,7 +145,7 @@ fn dispatchInfixParser(self: *Parser, expr: *Expression, left: usize, diag: ?*Di
 
 fn parseReal(self: *Parser, expr: *Expression, diag: ?*Diagnostics) Error!usize {
     const value_str = self.curr.?.token.number;
-    const value = std.fmt.parseFloat(f64, value_str) catch unreachable;
+    const value = std.fmt.parseFloat(Expression.Float, value_str) catch unreachable;
     expr.nodes.append(.{ .real = value }) catch |err| {
         if (diag) |d| {
             d.* = .oom;
@@ -327,7 +327,7 @@ test "parse float" {
     const cases = [_]struct {
         name: []const u8,
         input: []const u8,
-        expected: f64,
+        expected: Expression.Float,
     }{
         .{ .name = "positive integer", .input = "42", .expected = 42.0 },
         .{ .name = "negative integer", .input = "-42", .expected = -42.0 },
