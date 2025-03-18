@@ -2,8 +2,15 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const vaxis = @import("vaxis");
-const vxfw = vaxis.vxfw;
 const Unicode = vaxis.Unicode;
+const Key = vaxis.Key;
+const vxfw = vaxis.vxfw;
+const Surface = vxfw.Surface;
+const SubSurface = vxfw.SubSurface;
+const Widget = vxfw.Widget;
+const Event = vxfw.Event;
+const EventContext = vxfw.EventContext;
+const DrawContext = vxfw.DrawContext;
 
 const arrows_widget = @import("simple.zig").arrows_widget;
 const History = @import("History.zig");
@@ -52,7 +59,7 @@ pub fn deinit(self: *Model) void {
     self.text_input.deinit();
 }
 
-pub fn widget(self: *Model) vxfw.Widget {
+pub fn widget(self: *Model) Widget {
     return .{
         .userdata = self,
         .drawFn = Model.typeErasedDraw,
@@ -60,13 +67,13 @@ pub fn widget(self: *Model) vxfw.Widget {
     };
 }
 
-fn typeErasedDraw(userdata: *anyopaque, ctx: vxfw.DrawContext) Allocator.Error!vxfw.Surface {
+fn typeErasedDraw(userdata: *anyopaque, ctx: DrawContext) Allocator.Error!Surface {
     const self: *Model = @ptrCast(@alignCast(userdata));
     return self.draw(ctx);
 }
 
-pub fn draw(self: *Model, ctx: vxfw.DrawContext) Allocator.Error!vxfw.Surface {
-    const scroll_view: vxfw.SubSurface = .{
+pub fn draw(self: *Model, ctx: DrawContext) Allocator.Error!Surface {
+    const scroll_view: SubSurface = .{
         .origin = .{ .row = 0, .col = 0 },
         .surface = try self.scroll_bars.draw(ctx.withConstraints(
             .{
@@ -87,7 +94,7 @@ pub fn draw(self: *Model, ctx: vxfw.DrawContext) Allocator.Error!vxfw.Surface {
         )),
     };
 
-    const arrows_surf: vxfw.SubSurface = .{
+    const arrows_surf: SubSurface = .{
         .origin = .{ .row = scroll_view.surface.size.height, .col = 0 },
         .surface = try arrows_widget.draw(ctx.withConstraints(
             .{
@@ -104,7 +111,7 @@ pub fn draw(self: *Model, ctx: vxfw.DrawContext) Allocator.Error!vxfw.Surface {
         )),
     };
 
-    const text_input: vxfw.SubSurface = .{
+    const text_input: SubSurface = .{
         .origin = .{ .row = scroll_view.surface.size.height, .col = 3 },
         .surface = try self.text_input.draw(ctx.withConstraints(
             .{ .height = 1, .width = 1 },
@@ -128,32 +135,32 @@ pub fn draw(self: *Model, ctx: vxfw.DrawContext) Allocator.Error!vxfw.Surface {
     };
 }
 
-fn typeErasedEventHandler(userdata: *anyopaque, ctx: *vxfw.EventContext, event: vxfw.Event) anyerror!void {
+fn typeErasedEventHandler(userdata: *anyopaque, ctx: *EventContext, event: Event) anyerror!void {
     const self: *Model = @ptrCast(@alignCast(userdata));
     return self.handleEvent(ctx, event);
 }
 
-pub fn handleEvent(self: *Model, ctx: *vxfw.EventContext, event: vxfw.Event) anyerror!void {
+pub fn handleEvent(self: *Model, ctx: *EventContext, event: Event) anyerror!void {
     switch (event) {
         .key_press => |key| {
             if (key.codepoint == 'c' and key.mods.ctrl) {
                 ctx.quit = true;
                 return;
-            } else if (key.matches(vaxis.Key.up, .{})) {
+            } else if (key.matches(Key.up, .{})) {
                 self.history.selectNext();
                 self.text_input.clearRetainingCapacity();
                 if (self.history.getSelectedItem()) |item| {
                     try self.text_input.insertSliceAtCursor(item.input);
                 }
                 ctx.redraw = true;
-            } else if (key.matches(vaxis.Key.down, .{})) {
+            } else if (key.matches(Key.down, .{})) {
                 self.history.selectPrevious();
                 self.text_input.clearRetainingCapacity();
                 if (self.history.getSelectedItem()) |item| {
                     try self.text_input.insertSliceAtCursor(item.input);
                 }
                 ctx.redraw = true;
-            } else if (key.matches(vaxis.Key.enter, .{}) or key.matches('j', .{ .ctrl = true })) {
+            } else if (key.matches(Key.enter, .{}) or key.matches('j', .{ .ctrl = true })) {
                 const new_entry = if (self.history.getSelectedItem()) |selected_entry| b: {
                     defer self.history.deselect();
                     defer self.text_input.clearRetainingCapacity();
@@ -168,8 +175,8 @@ pub fn handleEvent(self: *Model, ctx: *vxfw.EventContext, event: vxfw.Event) any
                 _ = self.scroll_bars.scroll_view.scroll.linesDown(@truncate(new_entry.height()));
                 ctx.redraw = true;
             } else if (key.matchesAny(allowed_input_keys, .{}) or
-                key.codepoint == vaxis.Key.backspace or key.codepoint == vaxis.Key.delete or
-                key.codepoint == vaxis.Key.left or key.codepoint == vaxis.Key.right)
+                key.codepoint == Key.backspace or key.codepoint == Key.delete or
+                key.codepoint == Key.left or key.codepoint == Key.right)
             {
                 self.history.deselect();
                 try self.text_input.handleEvent(ctx, event);
