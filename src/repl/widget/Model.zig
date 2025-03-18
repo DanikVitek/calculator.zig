@@ -174,6 +174,20 @@ pub fn handleEvent(self: *Model, ctx: *EventContext, event: Event) anyerror!void
                 };
                 _ = self.scroll_bars.scroll_view.scroll.linesDown(@truncate(new_entry.height()));
                 ctx.redraw = true;
+            } else if (key.matches(Key.backspace, .{ .ctrl = true })) {
+                self.history.deselect();
+                self.text_input.deleteWordBefore();
+                ctx.redraw = true;
+            } else if (key.matches(Key.delete, .{ .ctrl = true })) {
+                self.history.deselect();
+                self.text_input.deleteWordAfter();
+                ctx.redraw = true;
+            } else if (key.matches(Key.left, .{ .ctrl = true })) {
+                self.history.deselect();
+                self.text_input.moveBackwardWordwise();
+            } else if (key.matches(Key.right, .{ .ctrl = true })) {
+                self.history.deselect();
+                self.text_input.moveForwardWordwise();
             } else if (key.matchesAny(allowed_input_keys, .{}) or
                 key.codepoint == Key.backspace or key.codepoint == Key.delete or
                 key.codepoint == Key.left or key.codepoint == Key.right)
