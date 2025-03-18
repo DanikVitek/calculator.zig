@@ -101,7 +101,7 @@ fn parseExpression(self: *Parser, expr: *Expression, precedence: Precedence, dia
 fn dispatchPrefixParser(self: *Parser, expr: *Expression, diag: ?*Diagnostics) Error!usize {
     const curr = self.curr orelse {
         if (diag) |d| {
-            d.* = .{ .eoi = .{ .location = self.pos_before_curr.? } };
+            d.* = .{ .eoi = .{ .location = self.pos_before_curr orelse 0 } };
         }
         return Error.UnexpectedEOI;
     };
