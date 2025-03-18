@@ -18,6 +18,7 @@ pub const Error = Lexer.Error || std.fmt.ParseFloatError || Allocator.Error || e
     MissingInfixParseFn,
     MissingPostfixParseFn,
     UnexpectedEOI,
+    ExpectedGroupClosingToken,
 };
 pub const Diagnostics = union(enum) {
     lexer: Lexer.Diagnostics,
@@ -32,6 +33,7 @@ pub const Diagnostics = union(enum) {
         location: usize,
     },
     eoi,
+    expected_group_closing_token: Tag(Token),
 };
 
 const Parser = @This();
@@ -99,6 +101,7 @@ fn dispatchPrefixParser(self: *Parser, expr: *Expression, diag: ?*Diagnostics) E
     return switch (curr) {
         .number => self.parseReal(expr, diag),
         .plus, .minus, .root => self.parsePrefixExpression(expr, diag),
+        inline .l_paren, .bar => |_, left_token| self.parseGroupedExpression(expr, left_token, diag),
         else => b: {
             if (diag) |d| {
                 d.* = .{ .missing_parse_fn = .{
@@ -173,6 +176,46 @@ fn parsePrefixExpression(self: *Parser, expr: *Expression, diag: ?*Diagnostics) 
     };
 
     return expr.nodes.items.len - 1;
+}
+
+fn parseGroupedExpression(
+    self: *Parser,
+    expr: *Expression,
+    comptime left_token: Tag(Token),
+    diag: ?*Diagnostics,
+) Error!usize {
+    const right_token: Tag(Token) = comptime switch (left_token) {
+        .l_paren => .r_paren,
+        .bar => .bar,
+        else => unreachable,
+    };
+
+    const operator: ?Expression.Node.Unary.Operator = comptime switch (left_token) {
+        .l_paren => null,
+        .bar => .abs,
+        else => unreachable,
+    };
+
+    try self.advance(diag);
+
+    const inner = try self.parseExpression(expr, .lowest, diag);
+
+    if (!try self.checkAdvance(right_token, diag)) {
+        if (diag) |d| {
+            d.* = .{ .expected_group_closing_token = right_token };
+        }
+        return Error.ExpectedGroupClosingToken;
+    }
+
+    return if (operator) |op| b: {
+        expr.nodes.append(.{ .unary = .{ .op = op, .expr = inner } }) catch |err| {
+            if (diag) |d| {
+                d.* = .oom;
+            }
+            return err;
+        };
+        break :b expr.nodes.items.len - 1;
+    } else inner;
 }
 
 fn parseInfixExpression(
@@ -252,15 +295,15 @@ inline fn peekPrecedence(self: *const Parser) Precedence {
     return precedences.get(self.peek.?) orelse .lowest;
 }
 
-inline fn currIs(self: *const Parser, token: Tag(Token)) bool {
-    return self.curr == token;
+inline fn currIs(self: *const Parser, comptime token: Tag(Token)) bool {
+    return if (self.curr) |c| c == token else false;
 }
 
-inline fn peekIs(self: *const Parser, token: Tag(Token)) bool {
-    return self.peek == token;
+inline fn peekIs(self: *const Parser, comptime token: Tag(Token)) bool {
+    return if (self.peek) |p| p == token else false;
 }
 
-fn checkAdvance(self: *Parser, token: Tag(Token), diag: ?*Diagnostics) Lexer.Error!bool {
+fn checkAdvance(self: *Parser, comptime token: Tag(Token), diag: ?*Diagnostics) Lexer.Error!bool {
     return if (self.peekIs(token)) b: {
         try self.advance(diag);
         break :b true;

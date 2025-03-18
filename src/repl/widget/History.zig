@@ -159,6 +159,17 @@ pub const Entry = struct {
                 }
                 try writer.print("^\nDescription: Unexpected end of input", .{});
             },
+            error.ExpectedGroupClosingToken => {
+                try writer.print("\t{s}\n\t", .{line});
+                for (0..line.len) |_| {
+                    try writer.print("~", .{});
+                }
+                try writer.print("^\nDescription: Expected `{s}` token", .{switch (diag.expected_group_closing_token) {
+                    .r_paren => ")",
+                    .bar => "|",
+                    else => unreachable,
+                }});
+            },
             else => try writer.print("{!}", .{err}),
         }
     }
