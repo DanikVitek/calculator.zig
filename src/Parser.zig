@@ -118,6 +118,10 @@ fn dispatchInfixParser(self: *Parser, expr: *Expression, left: usize, diag: ?*Di
             try self.advance(diag);
             break :b self.parseInfixExpression(expr, left, diag);
         },
+        .bang => b: {
+            try self.advance(diag);
+            break :b self.parsePostfixExpression(expr, left, diag);
+        },
         else => b: {
             if (diag) |d| {
                 d.* = .{ .missing_parse_fn = .{
@@ -195,6 +199,30 @@ fn parseInfixExpression(
         .op = op,
         .left = left,
         .right = right,
+    } }) catch |err| {
+        if (diag) |d| {
+            d.* = .oom;
+        }
+        return err;
+    };
+
+    return expr.nodes.items.len - 1;
+}
+
+fn parsePostfixExpression(
+    self: *Parser,
+    expr: *Expression,
+    left: usize,
+    diag: ?*Diagnostics,
+) Error!usize {
+    const op: Expression.Node.Unary.Operator = switch (self.curr.?) {
+        .bang => .factorial,
+        else => unreachable,
+    };
+
+    expr.nodes.append(.{ .unary = .{
+        .op = op,
+        .expr = left,
     } }) catch |err| {
         if (diag) |d| {
             d.* = .oom;

@@ -46,13 +46,7 @@ pub fn next(self: *Lexer, diag: ?*Diagnostics) Error!?Token {
         '(' => .l_paren,
         ')' => .r_paren,
         '+' => .plus,
-        '-' => b: {
-            if (self.peekCodepoint()) |peek| switch (peek) {
-                '0'...'9', '.' => continue :cases self.nextCodepoint().?,
-                else => break :b .minus,
-            };
-            break :b .minus;
-        },
+        '-' => .minus,
         '*' => .star,
         '/' => b: {
             if (self.peekCodepoint()) |peek| if (peek == '/') {
