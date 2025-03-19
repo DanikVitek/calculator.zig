@@ -67,8 +67,8 @@
         //},
 
         .vaxis = .{
-            .url = "git+https://github.com/rockorager/libvaxis.git#4182b7fa42f27cf14a71dbdb54cfd82c5c6e3447",
-            .hash = "vaxis-0.1.0-BWNV_MHyCAA0rNbPTr50Z44PyEdNP9zQSnHcXBXoo3Ti",
+            .url = "git+https://github.com/rockorager/libvaxis.git#2b3bdae695935ea010f04c3444d54fd6164933d7",
+            .hash = "vaxis-0.1.0-BWNV_OfyCACDc4Ex3sQn4IwJWD7bhu0QV9a5Glu8JWOF",
         },
         // .zg = .{
         //     .url = "git+https://codeberg.org/atman/zg#4a002763419a34d61dcbb1f415821b83b9bf8ddc",
